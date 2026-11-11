@@ -1,0 +1,444 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src https: data: blob:; connect-src https://script.google.com https://script.googleusercontent.com; base-uri 'none'; object-src 'none'">
+<title>Copy Tool · Productos</title>
+<style>
+  :root{
+    --bg:#f5f5f4; --card:#fff; --ink:#1c1917; --muted:#78716c; --line:#e7e5e4;
+    --wa:#128c4a; --fb:#1b5fd9; --mk:#374151; --ok:#15803d; --warn:#b45309; --off:#78716c;
+    --radius:12px;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font:15px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;background:var(--bg);color:var(--ink)}
+  header{position:sticky;top:0;z-index:5;background:#fff;border-bottom:1px solid var(--line);padding:12px 16px}
+  .bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;max-width:1200px;margin:0 auto}
+  .bar input[type=search]{flex:1 1 260px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;font:inherit}
+  .bar select{padding:9px 10px;border:1px solid var(--line);border-radius:10px;font:inherit;background:#fff}
+  .bar label{display:flex;gap:6px;align-items:center;color:var(--muted);font-size:14px;white-space:nowrap}
+  .icon-btn{border:1px solid var(--line);background:#fff;border-radius:10px;padding:9px 11px;cursor:pointer;font:inherit}
+  .note{max-width:1200px;margin:10px auto 0;padding:8px 12px;border-radius:10px;background:#fef3c7;color:#78350f;font-size:13px}
+  .note.err{background:#fee2e2;color:#7f1d1d}
+  main{max-width:1200px;margin:0 auto;padding:16px 16px 110px}
+  .count{color:var(--muted);font-size:13px;margin:0 0 10px}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);display:flex;flex-direction:column;overflow:hidden;position:relative}
+  .card.sel{outline:2px solid var(--fb)}
+  .pick{position:absolute;top:10px;left:10px;width:22px;height:22px;accent-color:var(--fb);cursor:pointer}
+  .ph{aspect-ratio:1/1;background:#fff;display:flex;align-items:center;justify-content:center;border-bottom:1px solid var(--line);cursor:pointer}
+  .ph img{max-width:88%;max-height:88%;object-fit:contain}
+  .ph .nofoto{color:var(--muted);font-size:13px;text-align:center;padding:20px}
+  .body{padding:12px;display:flex;flex-direction:column;gap:6px;flex:1}
+  .name{font-weight:600;font-size:14px;line-height:1.3;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;cursor:pointer}
+  .meta{color:var(--muted);font-size:12px}
+  .row{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:auto}
+  .price{font-size:20px;font-weight:700}
+  .badge{font-size:12px;padding:3px 8px;border-radius:999px;font-weight:600}
+  .badge.ok{background:#dcfce7;color:var(--ok)} .badge.warn{background:#fef3c7;color:var(--warn)} .badge.off{background:#f5f5f4;color:var(--off)}
+  .actions{display:grid;grid-template-columns:1fr 1fr;gap:6px;padding:0 12px 12px}
+  .b{border:0;border-radius:9px;padding:9px 8px;font:600 13px system-ui,sans-serif;cursor:pointer;color:#fff}
+  .b.wa{background:var(--wa)} .b.fb{background:var(--fb)} .b.mk{background:var(--mk)} .b.lt{background:#fff;color:var(--ink);border:1px solid var(--line)}
+  .b:active{transform:translateY(1px)}
+  .b[disabled]{opacity:.45;cursor:not-allowed}
+  /* Panel lateral */
+  .scrim{position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:20;display:none}
+  .panel{position:fixed;top:0;right:0;bottom:0;width:min(520px,100%);background:#fff;z-index:21;transform:translateX(100%);transition:transform .2s;overflow:auto;padding:18px}
+  .open .scrim{display:block} .open .panel{transform:none}
+  .panel h2{font-size:16px;margin:0 30px 4px 0;line-height:1.3}
+  .close{position:absolute;top:12px;right:12px;border:0;background:none;font-size:22px;cursor:pointer;color:var(--muted)}
+  .pimg{display:flex;gap:12px;align-items:center;margin:12px 0}
+  .pimg .ph{width:120px;flex:none;border:1px solid var(--line);border-radius:10px}
+  .pimg .btns{display:flex;flex-direction:column;gap:6px;flex:1}
+  .tabs{display:flex;gap:6px;margin:14px 0 8px;flex-wrap:wrap}
+  .tab{border:1px solid var(--line);background:#fff;border-radius:999px;padding:6px 12px;cursor:pointer;font:600 13px system-ui,sans-serif}
+  .tab.on{background:var(--ink);color:#fff;border-color:var(--ink)}
+  .field{margin:10px 0}
+  .field .lbl{display:flex;justify-content:space-between;align-items:center;font-size:12px;color:var(--muted);margin-bottom:4px;font-weight:600;text-transform:uppercase;letter-spacing:.03em}
+  .field pre{white-space:pre-wrap;margin:0;background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:10px;font:14px/1.45 system-ui,sans-serif}
+  .mini{border:1px solid var(--line);background:#fff;border-radius:8px;padding:4px 10px;cursor:pointer;font:600 12px system-ui,sans-serif;text-transform:none;letter-spacing:0;color:var(--ink)}
+  /* Barra de selección */
+  .selbar{position:fixed;left:50%;bottom:16px;transform:translateX(-50%);background:var(--ink);color:#fff;border-radius:14px;padding:10px 12px;display:none;gap:8px;align-items:center;z-index:10;box-shadow:0 8px 24px rgba(0,0,0,.2);flex-wrap:wrap;justify-content:center;max-width:calc(100% - 24px)}
+  .selbar.show{display:flex}
+  .selbar .b.lt{background:transparent;color:#fff;border-color:#57534e}
+  .toast{position:fixed;left:50%;top:18px;transform:translate(-50%,-80px);background:var(--ink);color:#fff;padding:10px 16px;border-radius:10px;z-index:40;transition:transform .2s;font-size:14px;max-width:90%}
+  .toast.show{transform:translate(-50%,0)} .toast.err{background:#b91c1c}
+  dialog{border:0;border-radius:14px;padding:20px;width:min(440px,92%)}
+  dialog input{width:100%;padding:9px;border:1px solid var(--line);border-radius:8px;font:inherit;margin:4px 0 12px}
+  dialog p{color:var(--muted);font-size:13px;margin:0 0 12px}
+</style>
+</head>
+<body>
+<header>
+  <div class="bar">
+    <input id="q" type="search" placeholder="Buscar por nombre, marca o código…" autocomplete="off">
+    <select id="cat"><option value="">Todas las categorías</option></select>
+    <label><input id="soloDisp" type="checkbox" checked> Solo disponibles</label>
+    <label><input id="soloFoto" type="checkbox"> Solo con foto</label>
+    <label title="Agrega el código del producto al final de cada texto"><input id="conCodigo" type="checkbox"> Incluir código</label>
+    <button class="icon-btn" id="recargar" title="Volver a leer el inventario">↻</button>
+    <button class="icon-btn" id="ajustes" title="Conexión">⚙︎</button>
+  </div>
+  <div id="aviso" class="note" hidden></div>
+</header>
+
+<main>
+  <p class="count" id="count"></p>
+  <div class="grid" id="grid"></div>
+</main>
+
+<div class="selbar" id="selbar">
+  <span id="selN"></span>
+  <button class="b wa" data-lista="wa">Copiar lista WhatsApp</button>
+  <button class="b fb" data-lista="fb">Copiar lista Facebook</button>
+  <button class="b lt" id="limpiar">Quitar selección</button>
+</div>
+
+<div id="detalle">
+  <div class="scrim" id="scrim"></div>
+  <aside class="panel" id="panel"></aside>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<dialog id="dlg">
+  <form method="dialog">
+    <h3 style="margin:0 0 6px">Conexión con el inventario</h3>
+    <p>Pega la dirección de la aplicación web de Apps Script y la clave. Se guardan solo en este navegador.</p>
+    <label>Dirección de la API</label>
+    <input id="cfgApi" placeholder="https://script.google.com/macros/s/…/exec">
+    <label>Clave</label>
+    <input id="cfgClave">
+    <div style="display:flex;gap:8px;justify-content:flex-end">
+      <button class="b lt" value="borrar">Desconectar</button>
+      <button class="b fb" value="ok">Guardar</button>
+    </div>
+  </form>
+</dialog>
+
+<script>
+/* Sin datos de demostración: los productos solo llegan desde la API con una clave válida. */
+const DEMO = [];
+
+/* ---------- Estado ---------- */
+const $ = s => document.querySelector(s);
+const store = { get(k){try{return localStorage.getItem(k)}catch(e){return null}}, set(k,v){try{v==null?localStorage.removeItem(k):localStorage.setItem(k,v)}catch(e){}} };
+let productos = [], seleccion = new Set(), modo = 'demo', usuario = '';
+const fotoCache = new Map();
+
+// La conexión puede venir en el enlace personal: .../#api=...&clave=...
+// Va después de "#" para que nunca se envíe a GitHub, y se borra de la barra
+// de direcciones apenas se guarda, para que no quede en el historial.
+(function leerEnlace(){
+  const leer = t => new URLSearchParams(t.replace(/^[#?]/, ''));
+  let p = leer(location.hash);
+  if (!p.get('api')) p = leer(location.search); // enlaces viejos con "?"
+  const api = p.get('api') || '';
+  if (/^https:\/\/script\.google\.com\/macros\/s\/[\w-]+\/exec$/.test(api)) {
+    store.set('ct_api', api); store.set('ct_clave', p.get('clave') || '');
+  }
+  if (p.get('api') || p.get('clave')) history.replaceState(null, '', location.pathname);
+})();
+
+/* ---------- Formatos ---------- */
+const fmt = n => new Intl.NumberFormat('en-US',{style:'currency',currency:'USD'}).format(Number(n)||0);
+function disp(d){
+  const s = String(d??'').trim();
+  if (/más/i.test(s)) return {txt:'Disponible', cls:'ok', wa:'✅', n:99};
+  const n = Number(s);
+  if (n > 5) return {txt:'Disponible', cls:'ok', wa:'✅', n};
+  if (n > 0) return {txt:'Últimas unidades', cls:'warn', wa:'⚡', n};
+  return {txt:'Consultar disponibilidad', cls:'off', wa:'ℹ️', n:0};
+}
+// Atributos útiles para el cliente: se quitan números sueltos, temperaturas y "Sí/No/Nuevo".
+function atributos(p){
+  return String(p.atributos||'').split('|').map(a=>a.trim())
+    .filter(a => a && !/^(sí|si|no|nuevo)$/i.test(a) && !/^-?\d+([.,]\d+)?\s*(°c|")?$/i.test(a))
+    .slice(0,4);
+}
+function titulo(p, max=100){
+  const partes = String(p.nombre).split(' - ');
+  let t = '';
+  for (const parte of partes){ const c = t ? t+' - '+parte : parte; if (c.length > max) break; t = c; }
+  return t || String(p.nombre).slice(0,max);
+}
+const hashtag = s => '#' + String(s||'').normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^A-Za-z0-9]/g,'');
+
+/* ---------- Textos por canal ---------- */
+function textos(p){
+  const d = disp(p.disponibilidad), at = atributos(p), cod = $('#conCodigo').checked ? p.sku : '';
+  const wa = [
+    `*${p.nombre}*`, '',
+    `💲 *${fmt(p.precio)}* IVA incluido`,
+    `${d.wa} ${d.txt}`,
+    ...(at.length ? ['', ...at.map(a=>'▫️ '+a)] : []),
+    ...(cod ? ['', `Código: ${cod}`] : [])
+  ].join('\n');
+  const fb = [
+    p.nombre, '',
+    `Precio: ${fmt(p.precio)} (IVA incluido)`,
+    d.txt,
+    ...(at.length ? ['', ...at.map(a=>'• '+a)] : []),
+    '', 'Escríbenos para más información.',
+    ...(cod ? [`Código: ${cod}`] : []),
+    '', [hashtag(p.marca), hashtag(p.subcategoria||p.categoria), '#ElSalvador'].join(' ')
+  ].join('\n');
+  const mkDesc = [
+    p.nombre, '',
+    ...(at.length ? [...at.map(a=>'• '+a), ''] : []),
+    `Precio con IVA incluido. ${d.txt}.`,
+    ...(cod ? [`Código: ${cod}`] : [])
+  ].join('\n');
+  const rapido = `${p.nombre} — ${fmt(p.precio)} IVA incluido (${d.txt})` + (cod ? ` · Código ${cod}` : '');
+  return {
+    wa, fb, rapido,
+    mkTitulo: titulo(p),
+    mkPrecio: String(Math.round(Number(p.precio)||0)),
+    mkDesc
+  };
+}
+function lista(items, canal){
+  const cod = $('#conCodigo').checked;
+  return items.map(p => {
+    const d = disp(p.disponibilidad), t = titulo(p, 70);
+    return canal === 'wa'
+      ? `• ${t} — *${fmt(p.precio)}*${d.cls!=='ok' ? ' ('+d.txt.toLowerCase()+')' : ''}${cod ? ' · '+p.sku : ''}`
+      : `• ${t} — ${fmt(p.precio)}${d.cls!=='ok' ? ' ('+d.txt.toLowerCase()+')' : ''}${cod ? ' · '+p.sku : ''}`;
+  }).join('\n') + '\n\nPrecios con IVA incluido.';
+}
+
+/* ---------- Portapapeles ---------- */
+async function copiarTexto(t, msg='Texto copiado'){
+  try { await navigator.clipboard.writeText(t); }
+  catch(e){
+    const ta = document.createElement('textarea'); ta.value = t; ta.style.position='fixed'; ta.style.opacity='0';
+    document.body.appendChild(ta); ta.select(); const ok = document.execCommand('copy'); ta.remove();
+    if (!ok) return toast('No se pudo copiar. Tu navegador lo bloqueó.', true);
+  }
+  toast(msg);
+}
+
+// Consigue la foto como archivo a través de la API (los servidores de fotos no dejan copiarlas directo).
+async function fotoBlob(p){
+  if (fotoCache.has(p.sku)) return fotoCache.get(p.sku);
+  let blob = null;
+  if (!blob && modo === 'api'){
+    const j = await api({accion:'foto', sku:p.sku});
+    if (!j.ok) throw new Error(j.error||'Sin foto');
+    const bin = atob(j.base64), arr = new Uint8Array(bin.length);
+    for (let i=0;i<bin.length;i++) arr[i] = bin.charCodeAt(i);
+    blob = new Blob([arr], {type:j.tipo||'image/jpeg'});
+  }
+  if (!blob) throw new Error('No se pudo obtener la foto');
+  fotoCache.set(p.sku, blob);
+  return blob;
+}
+// Los chats solo aceptan PNG desde el portapapeles, así que se convierte.
+async function aPng(blob){
+  const bmp = await createImageBitmap(blob);
+  const c = document.createElement('canvas'); c.width = bmp.width; c.height = bmp.height;
+  const g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0,0,c.width,c.height); g.drawImage(bmp,0,0);
+  return new Promise(res => c.toBlob(res, 'image/png'));
+}
+async function copiarFoto(p){
+  if (!p.foto) return toast('Este producto no tiene foto', true);
+  if (!window.ClipboardItem) return toast('Este navegador no deja copiar imágenes. Usa "Descargar foto".', true);
+  try {
+    await navigator.clipboard.write([new ClipboardItem({'image/png': fotoBlob(p).then(aPng)})]);
+    toast('Foto copiada. Pégala en el chat con Ctrl+V');
+  } catch(e){ toast(e.message && !/Document|permission|denied/i.test(e.message) ? e.message : 'No se pudo copiar la foto aquí. Usa "Descargar foto".', true); }
+}
+async function descargarFoto(p){
+  if (!p.foto) return toast('Este producto no tiene foto', true);
+  try {
+    const b = await fotoBlob(p), ext = (b.type.split('/')[1]||'jpg').replace('jpeg','jpg');
+    const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = `${p.sku}.${ext}`;
+    document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(a.href), 5000);
+  } catch(e){ window.open(encodeURI(decodeURI(p.foto)), '_blank'); }
+}
+async function compartir(p){
+  const t = textos(p).wa.replace(/\*/g,'');
+  try {
+    const files = [];
+    if (p.foto){ const b = await fotoBlob(p); files.push(new File([b], `${p.sku}.jpg`, {type:b.type})); }
+    if (files.length && navigator.canShare && navigator.canShare({files})) await navigator.share({files, text:t});
+    else await navigator.share({text:t});
+  } catch(e){ if (e.name !== 'AbortError') toast('No se pudo compartir', true); }
+}
+
+/* ---------- API ---------- */
+async function api(params){
+  const u = new URL(store.get('ct_api'));
+  Object.entries({...params, clave: store.get('ct_clave')||''}).forEach(([k,v]) => u.searchParams.set(k,v));
+  const r = await fetch(u.toString());
+  return r.json();
+}
+async function cargar(){
+  const aviso = $('#aviso');
+  aviso.hidden = true; aviso.className = 'note';
+  if (store.get('ct_api')){
+    $('#count').textContent = 'Cargando inventario…';
+    try {
+      const j = await api({accion:'productos'});
+      if (!j.ok) throw new Error(j.error);
+      productos = (j.productos||[]).map(p => ({...p, foto: /^https:\/\//i.test(String(p.foto||'')) ? String(p.foto) : ''}));
+      modo = 'api';
+      productos.forEach(p => { p._h = norm([p.nombre,p.marca,p.sku,p.subcategoria,p.categoria].join(' ')); });
+      usuario = j.usuario || '';
+    } catch(e){
+      productos = DEMO; modo = 'demo'; usuario = '';
+      aviso.hidden = false; aviso.className = 'note err';
+      aviso.textContent = 'No se pudo leer el inventario (' + e.message + '). Revisa la conexión en ⚙︎.';
+    }
+  } else {
+    productos = DEMO; modo = 'demo';
+    aviso.hidden = false;
+    aviso.textContent = 'Sin conexión. Abre tu enlace personal o toca ⚙︎ y pega la dirección de la API y tu clave.';
+  }
+  const cats = [...new Set(productos.map(p=>p.categoria))].sort((a,b)=>a.localeCompare(b,'es'));
+  const sel = $('#cat'), actual = sel.value;
+  sel.innerHTML = '<option value="">Todas las categorías</option>' + cats.map(c=>`<option>${esc(c)}</option>`).join('');
+  sel.value = cats.includes(actual) ? actual : '';
+  pintar();
+}
+
+/* ---------- Pantalla ---------- */
+const esc = s => String(s??'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const norm = s => String(s||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase();
+function filtrados(){
+  const q = norm($('#q').value).split(/\s+/).filter(Boolean), c = $('#cat').value, solo = $('#soloDisp').checked, conFoto = $('#soloFoto').checked;
+  return productos.filter(p => {
+    if (c && p.categoria !== c) return false;
+    if (conFoto && !p.foto) return false;
+    if (solo && disp(p.disponibilidad).n === 0) return false;
+    return q.every(w => p._h.includes(w));
+  });
+}
+function fotoHtml(p){
+  return p.foto ? `<img loading="lazy" src="${esc(encodeURI(decodeURI(p.foto)))}" alt="" onerror="this.replaceWith(Object.assign(document.createElement('div'),{className:'nofoto',textContent:'Foto no disponible'}))">`
+                : `<div class="nofoto">Sin foto</div>`;
+}
+function pintar(){
+  const lista = filtrados();
+  $('#count').textContent = `${lista.length} producto${lista.length===1?'':'s'}` + '' + (usuario ? ` · Conectado como ${usuario}` : '');
+  $('#grid').innerHTML = lista.slice(0,300).map(p => {
+    const d = disp(p.disponibilidad);
+    return `<article class="card ${seleccion.has(p.sku)?'sel':''}" data-sku="${esc(p.sku)}">
+      <input class="pick" type="checkbox" ${seleccion.has(p.sku)?'checked':''} title="Seleccionar para lista">
+      <div class="ph" data-act="ver">${fotoHtml(p)}</div>
+      <div class="body">
+        <div class="name" data-act="ver">${esc(p.nombre)}</div>
+        <div class="meta">${esc(p.marca)} · ${esc(p.subcategoria||p.categoria)}</div>
+        <div class="row"><span class="price">${fmt(p.precio)}</span><span class="badge ${d.cls}">${d.txt}</span></div>
+      </div>
+      <div class="actions">
+        <button class="b wa" data-act="wa">Texto WhatsApp</button>
+        <button class="b lt" data-act="foto" ${p.foto?'':'disabled'}>Copiar foto</button>
+        <button class="b fb" data-act="fb">Texto Facebook</button>
+        <button class="b mk" data-act="ver">Marketplace / más</button>
+      </div>
+    </article>`;
+  }).join('') + (lista.length > 300 ? `<p class="count">Mostrando 300 de ${lista.length}. Escribe en el buscador para encontrar el resto.</p>` : '');
+  barra();
+}
+function barra(){
+  $('#selbar').classList.toggle('show', seleccion.size > 0);
+  $('#selN').textContent = `${seleccion.size} seleccionado${seleccion.size===1?'':'s'}`;
+}
+
+function campo(lbl, txt, id){
+  return `<div class="field"><div class="lbl">${lbl}<button class="mini" data-copy="${id}">Copiar</button></div><pre id="${id}">${esc(txt)}</pre></div>`;
+}
+let actual = null, canal = 'wa';
+function abrir(p){
+  actual = p;
+  const t = textos(p), d = disp(p.disponibilidad);
+  const vistas = {
+    wa: campo('WhatsApp', t.wa, 'c1') + campo('Respuesta rápida (una línea)', t.rapido, 'c2'),
+    fb: campo('Publicación o Messenger', t.fb, 'c1'),
+    mk: campo('Título', t.mkTitulo, 'c1') + campo('Precio', t.mkPrecio, 'c2') + campo('Descripción', t.mkDesc, 'c3') +
+        `<p class="meta">Marketplace pide subir la foto como archivo: usa "Descargar foto" y luego súbela.</p>`
+  };
+  $('#panel').innerHTML = `
+    <button class="close" id="cerrar" aria-label="Cerrar">×</button>
+    <h2>${esc(p.nombre)}</h2>
+    <div class="meta">${esc(p.marca)} · ${esc(p.categoria)} · ${fmt(p.precio)} · ${d.txt}</div>
+    <div class="pimg">
+      <div class="ph">${fotoHtml(p)}</div>
+      <div class="btns">
+        <button class="b lt" data-p="foto" ${p.foto?'':'disabled'}>Copiar foto</button>
+        <button class="b lt" data-p="descargar" ${p.foto?'':'disabled'}>Descargar foto</button>
+        ${navigator.share ? '<button class="b lt" data-p="compartir">Compartir (teléfono)</button>' : ''}
+      </div>
+    </div>
+    <div class="tabs">
+      <button class="tab ${canal==='wa'?'on':''}" data-canal="wa">WhatsApp</button>
+      <button class="tab ${canal==='fb'?'on':''}" data-canal="fb">Facebook</button>
+      <button class="tab ${canal==='mk'?'on':''}" data-canal="mk">Marketplace</button>
+    </div>
+    ${vistas[canal]}`;
+  $('#detalle').classList.add('open');
+}
+function cerrar(){ $('#detalle').classList.remove('open'); actual = null; }
+
+let tt;
+function toast(m, err=false){
+  const t = $('#toast'); t.textContent = m; t.className = 'toast show' + (err?' err':'');
+  clearTimeout(tt); tt = setTimeout(()=>t.className='toast'+(err?' err':''), 2600);
+}
+
+/* ---------- Eventos ---------- */
+const buscar = p => productos.find(x => String(x.sku) === String(p));
+$('#grid').addEventListener('click', e => {
+  const card = e.target.closest('.card'); if (!card) return;
+  const p = buscar(card.dataset.sku);
+  if (e.target.classList.contains('pick')){
+    e.target.checked ? seleccion.add(p.sku) : seleccion.delete(p.sku);
+    card.classList.toggle('sel', e.target.checked); return barra();
+  }
+  const act = e.target.closest('[data-act]')?.dataset.act;
+  if (act === 'wa') copiarTexto(textos(p).wa, 'Texto de WhatsApp copiado');
+  else if (act === 'fb') copiarTexto(textos(p).fb, 'Texto de Facebook copiado');
+  else if (act === 'foto') copiarFoto(p);
+  else if (act === 'ver') { if (e.target.closest('.b.mk')) canal = 'mk'; abrir(p); }
+});
+$('#panel').addEventListener('click', e => {
+  if (e.target.id === 'cerrar') return cerrar();
+  const c = e.target.dataset.copy; if (c) return copiarTexto($('#'+c).textContent);
+  const k = e.target.dataset.canal; if (k){ canal = k; return abrir(actual); }
+  const a = e.target.dataset.p;
+  if (a === 'foto') copiarFoto(actual); else if (a === 'descargar') descargarFoto(actual); else if (a === 'compartir') compartir(actual);
+});
+$('#scrim').addEventListener('click', cerrar);
+document.addEventListener('keydown', e => { if (e.key === 'Escape') cerrar(); });
+$('#selbar').addEventListener('click', e => {
+  const l = e.target.dataset.lista;
+  const items = productos.filter(p => seleccion.has(p.sku));
+  if (l) copiarTexto(lista(items, l), `Lista de ${items.length} copiada`);
+  if (e.target.id === 'limpiar'){ seleccion.clear(); pintar(); }
+});
+$('#soloFoto').checked = store.get('ct_solofoto') === '1';
+$('#soloFoto').addEventListener('change', e => store.set('ct_solofoto', e.target.checked?'1':'0'));
+let espera; $('#q').addEventListener('input', () => { clearTimeout(espera); espera = setTimeout(pintar, 150); });
+['#cat','#soloDisp','#soloFoto'].forEach(s => $(s).addEventListener('input', pintar));
+$('#conCodigo').checked = store.get('ct_codigo') === '1';
+$('#conCodigo').addEventListener('change', e => { store.set('ct_codigo', e.target.checked?'1':'0'); if (actual) abrir(actual); });
+$('#recargar').addEventListener('click', () => { fotoCache.clear(); cargar(); });
+$('#ajustes').addEventListener('click', () => { $('#cfgApi').value = store.get('ct_api')||''; $('#cfgClave').value = store.get('ct_clave')||''; $('#dlg').showModal(); });
+$('#dlg').addEventListener('close', () => {
+  const v = $('#dlg').returnValue;
+  if (v === 'ok'){
+    const a = $('#cfgApi').value.trim();
+    if (!/^https:\/\/script\.google\.com\/macros\/s\/[\w-]+\/exec$/.test(a)) { toast('La dirección debe ser https://script.google.com/macros/s/…/exec', true); return; }
+    store.set('ct_api', a); store.set('ct_clave', $('#cfgClave').value.trim());
+  }
+  if (v === 'borrar'){ store.set('ct_api', null); store.set('ct_clave', null); }
+  if (v) cargar();
+});
+
+cargar();
+</script>
+</body>
+</html>
