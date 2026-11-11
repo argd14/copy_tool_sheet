@@ -13,6 +13,7 @@
     --radius:12px;
   }
   *{box-sizing:border-box}
+  [hidden]{display:none!important}
   body{margin:0;font:15px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;background:var(--bg);color:var(--ink)}
   header{position:sticky;top:0;z-index:5;background:#fff;border-bottom:1px solid var(--line);padding:12px 16px}
   .bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;max-width:1200px;margin:0 auto}
@@ -65,6 +66,13 @@
   .selbar .b.lt{background:transparent;color:#fff;border-color:#57534e}
   .toast{position:fixed;left:50%;top:18px;transform:translate(-50%,-80px);background:var(--ink);color:#fff;padding:10px 16px;border-radius:10px;z-index:40;transition:transform .2s;font-size:14px;max-width:90%}
   .toast.show{transform:translate(-50%,0)} .toast.err{background:#b91c1c}
+  .welcome{max-width:460px;margin:48px auto;background:#fff;border:1px solid var(--line);border-radius:16px;padding:24px;text-align:center}
+  .welcome h2{margin:0 0 8px;font-size:20px}
+  .welcome p{color:var(--muted);margin:0 0 14px}
+  .welcome input{width:100%;padding:11px;border:1px solid var(--line);border-radius:10px;font:inherit;margin-bottom:10px}
+  .welcome .b{width:100%;padding:12px}
+  .hint{max-width:1200px;margin:10px auto 0;padding:10px 12px;border-radius:10px;background:#e0f2fe;color:#0c4a6e;font-size:14px;display:flex;gap:10px;align-items:flex-start}
+  .hint button{margin-left:auto;border:0;background:none;font-size:18px;line-height:1;cursor:pointer;color:#0c4a6e}
   dialog{border:0;border-radius:14px;padding:20px;width:min(440px,92%)}
   dialog input{width:100%;padding:9px;border:1px solid var(--line);border-radius:8px;font:inherit;margin:4px 0 12px}
   dialog p{color:var(--muted);font-size:13px;margin:0 0 12px}
@@ -82,9 +90,18 @@
     <button class="icon-btn" id="ajustes" title="Conexión">⚙︎</button>
   </div>
   <div id="aviso" class="note" hidden></div>
+  <div id="instalar" class="hint" hidden><span id="instalarTxt"></span><button id="instalarX" aria-label="Cerrar">×</button></div>
 </header>
 
-<main>
+<section class="welcome" id="bienvenida" hidden>
+  <h2 id="bTitulo">Bienvenido</h2>
+  <p id="bTexto">Para entrar, toca el enlace de acceso que te enviaron por WhatsApp. Solo se necesita la primera vez.</p>
+  <p style="margin-bottom:8px">¿Ya copiaste el enlace? Pégalo aquí:</p>
+  <input id="pegaEnlace" placeholder="Pega aquí tu enlace de acceso" autocomplete="off">
+  <button class="b fb" id="entrar">Entrar</button>
+</section>
+
+<main id="principal">
   <p class="count" id="count"></p>
   <div class="grid" id="grid"></div>
 </main>
@@ -128,18 +145,29 @@ const store = { get(k){try{return localStorage.getItem(k)}catch(e){return null}}
 let productos = [], seleccion = new Set(), modo = 'demo', usuario = '';
 const fotoCache = new Map();
 
-// La conexión puede venir en el enlace personal: .../#api=...&clave=...
-// Va después de "#" para que nunca se envíe a GitHub, y se borra de la barra
-// de direcciones apenas se guarda, para que no quede en el historial.
+// La conexión viene en el enlace personal: .../#api=...&clave=...
+// Va después de "#" para que nunca se envíe a GitHub.
+const RE_API = /^https:\/\/script\.google\.com\/macros\/s\/[\w-]+\/exec$/;
+const esIOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+const comoApp = navigator.standalone === true || (window.matchMedia && matchMedia('(display-mode: standalone)').matches);
+let recienConectado = false;
+function guardarEnlace(texto){
+  const t = String(texto||'').trim();
+  const frag = t.includes('#') ? t.slice(t.indexOf('#')) : t.includes('?') ? t.slice(t.indexOf('?')) : t;
+  const p = new URLSearchParams(frag.replace(/^[#?]/, ''));
+  const api = p.get('api') || '', clave = (p.get('clave') || '').trim();
+  if (!RE_API.test(api) || clave.length < 8) return false;
+  store.set('ct_api', api); store.set('ct_clave', clave); recienConectado = true;
+  return true;
+}
 (function leerEnlace(){
-  const leer = t => new URLSearchParams(t.replace(/^[#?]/, ''));
-  let p = leer(location.hash);
-  if (!p.get('api')) p = leer(location.search); // enlaces viejos con "?"
-  const api = p.get('api') || '';
-  if (/^https:\/\/script\.google\.com\/macros\/s\/[\w-]+\/exec$/.test(api)) {
-    store.set('ct_api', api); store.set('ct_clave', p.get('clave') || '');
-  }
-  if (p.get('api') || p.get('clave')) history.replaceState(null, '', location.pathname);
+  const tiene = /[#?&](api|clave)=/.test(location.hash + location.search);
+  if (!tiene) return;
+  guardarEnlace(location.href);
+  // Se borra de la barra de direcciones para que no quede en el historial.
+  // Excepción: en iPhone, si aún no está en la pantalla de inicio, se deja, porque
+  // "Agregar a inicio" guarda la dirección y la app instalada la necesita para conectarse.
+  if (!(esIOS && !comoApp)) history.replaceState(null, '', location.pathname);
 })();
 
 /* ---------- Formatos ---------- */
@@ -275,33 +303,60 @@ async function api(params){
   const r = await fetch(u.toString());
   return r.json();
 }
+function mostrarBienvenida(titulo, texto){
+  $('#bTitulo').textContent = titulo; $('#bTexto').textContent = texto;
+  $('#bienvenida').hidden = false; $('#principal').hidden = true;
+  document.querySelector('header .bar').style.visibility = 'hidden';
+}
 async function cargar(){
   const aviso = $('#aviso');
   aviso.hidden = true; aviso.className = 'note';
-  if (store.get('ct_api')){
-    $('#count').textContent = 'Cargando inventario…';
-    try {
-      const j = await api({accion:'productos'});
-      if (!j.ok) throw new Error(j.error);
-      productos = (j.productos||[]).map(p => ({...p, foto: /^https:\/\//i.test(String(p.foto||'')) ? String(p.foto) : ''}));
-      modo = 'api';
-      productos.forEach(p => { p._h = norm([p.nombre,p.marca,p.sku,p.subcategoria,p.categoria].join(' ')); });
-      usuario = j.usuario || '';
-    } catch(e){
-      productos = DEMO; modo = 'demo'; usuario = '';
-      aviso.hidden = false; aviso.className = 'note err';
-      aviso.textContent = 'No se pudo leer el inventario (' + e.message + '). Revisa la conexión en ⚙︎.';
-    }
-  } else {
-    productos = DEMO; modo = 'demo';
-    aviso.hidden = false;
-    aviso.textContent = 'Sin conexión. Abre tu enlace personal o toca ⚙︎ y pega la dirección de la API y tu clave.';
+  $('#bienvenida').hidden = true; $('#principal').hidden = false;
+  document.querySelector('header .bar').style.visibility = '';
+  productos = []; usuario = '';
+  if (!store.get('ct_api')){
+    mostrarBienvenida('Bienvenido', 'Para entrar, toca el enlace de acceso que te enviaron por WhatsApp. Solo se necesita la primera vez.');
+    return;
   }
+  $('#count').textContent = 'Cargando productos…';
+  let j;
+  try { j = await api({accion:'productos'}); }
+  catch(e){
+    aviso.hidden = false; aviso.className = 'note err';
+    aviso.textContent = 'No se pudo conectar. Revisa tu internet y toca ↻ para intentar de nuevo.';
+    $('#count').textContent = ''; return;
+  }
+  if (!j.ok){
+    if (/clave/i.test(j.error||'')){
+      store.set('ct_clave', null);
+      mostrarBienvenida('Tu acceso ya no es válido', 'Pide un enlace nuevo a la persona que administra la herramienta y tócalo para volver a entrar.');
+    } else {
+      aviso.hidden = false; aviso.className = 'note err';
+      aviso.textContent = 'La herramienta tuvo un problema. Intenta en unos minutos o avisa al administrador.';
+      $('#count').textContent = '';
+    }
+    return;
+  }
+  productos = (j.productos||[]).map(p => ({...p, foto: /^https:\/\//i.test(String(p.foto||'')) ? String(p.foto) : ''}));
+  productos.forEach(p => { p._h = norm([p.nombre,p.marca,p.sku,p.subcategoria,p.categoria].join(' ')); });
+  modo = 'api'; usuario = j.usuario || '';
+  if (recienConectado){ toast(`¡Listo${usuario ? ', ' + usuario : ''}! Ya estás conectado.`); recienConectado = false; }
+  sugerirInstalar();
   const cats = [...new Set(productos.map(p=>p.categoria))].sort((a,b)=>a.localeCompare(b,'es'));
   const sel = $('#cat'), actual = sel.value;
   sel.innerHTML = '<option value="">Todas las categorías</option>' + cats.map(c=>`<option>${esc(c)}</option>`).join('');
   sel.value = cats.includes(actual) ? actual : '';
   pintar();
+}
+
+// En el teléfono: explicar cómo dejarla en la pantalla de inicio (una vez, se puede cerrar).
+function sugerirInstalar(){
+  const movil = window.matchMedia && matchMedia('(pointer:coarse)').matches;
+  if (!movil || comoApp || store.get('ct_instalar') === 'no') return;
+  $('#instalarTxt').textContent = esIOS
+    ? 'Tip: para tenerla como app, toca Compartir (el cuadro con flecha ↑) y luego "Agregar a inicio".'
+    : 'Tip: para tenerla como app, abre el menú ⋮ de Chrome y elige "Agregar a la pantalla principal".';
+  $('#instalar').hidden = false;
 }
 
 /* ---------- Pantalla ---------- */
@@ -431,13 +486,19 @@ $('#dlg').addEventListener('close', () => {
   const v = $('#dlg').returnValue;
   if (v === 'ok'){
     const a = $('#cfgApi').value.trim();
-    if (!/^https:\/\/script\.google\.com\/macros\/s\/[\w-]+\/exec$/.test(a)) { toast('La dirección debe ser https://script.google.com/macros/s/…/exec', true); return; }
+    if (!RE_API.test(a)) { toast('La dirección debe ser https://script.google.com/macros/s/…/exec', true); return; }
     store.set('ct_api', a); store.set('ct_clave', $('#cfgClave').value.trim());
   }
   if (v === 'borrar'){ store.set('ct_api', null); store.set('ct_clave', null); }
   if (v) cargar();
 });
 
+$('#instalarX').addEventListener('click', () => { $('#instalar').hidden = true; store.set('ct_instalar','no'); });
+$('#entrar').addEventListener('click', () => {
+  if (guardarEnlace($('#pegaEnlace').value)) { $('#pegaEnlace').value = ''; cargar(); }
+  else toast('Ese no parece un enlace de acceso. Cópialo completo, desde https hasta el final.', true);
+});
+$('#pegaEnlace').addEventListener('keydown', e => { if (e.key === 'Enter') $('#entrar').click(); });
 cargar();
 </script>
 </body>
