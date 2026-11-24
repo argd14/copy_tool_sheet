@@ -17,7 +17,7 @@
   body{margin:0;font:15px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;background:var(--bg);color:var(--ink)}
   header{position:sticky;top:0;z-index:5;background:#fff;border-bottom:1px solid var(--line);padding:12px 16px}
   .bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;max-width:1200px;margin:0 auto}
-  .bar input[type=search]{flex:1 1 260px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;font:inherit}
+  .bar input[type=search]{flex:1 1 200px;min-width:0;padding:10px 12px;border:1px solid var(--line);border-radius:10px;font:inherit}
   .bar select{padding:9px 10px;border:1px solid var(--line);border-radius:10px;font:inherit;background:#fff}
   .bar label{display:flex;gap:6px;align-items:center;color:var(--muted);font-size:14px;white-space:nowrap}
   .icon-btn{border:1px solid var(--line);background:#fff;border-radius:10px;padding:9px 11px;cursor:pointer;font:inherit}
@@ -83,6 +83,12 @@
   <div class="bar">
     <input id="q" type="search" placeholder="Buscar por nombre, marca o código…" autocomplete="off">
     <select id="cat"><option value="">Todas las categorías</option></select>
+    <select id="orden" title="Ordenar">
+      <option value="precio-desc">Precio: mayor a menor</option>
+      <option value="precio-asc">Precio: menor a mayor</option>
+      <option value="nombre">Nombre: A a Z</option>
+      <option value="">Orden del inventario</option>
+    </select>
     <label><input id="soloDisp" type="checkbox" checked> Solo disponibles</label>
     <label><input id="soloFoto" type="checkbox"> Solo con foto</label>
     <label title="Agrega el código del producto al final de cada texto"><input id="conCodigo" type="checkbox"> Incluir código</label>
@@ -249,34 +255,55 @@ async function copiarTexto(t, msg='Texto copiado'){
 }
 
 // Consigue la foto como archivo a través de la API (los servidores de fotos no dejan copiarlas directo).
-async function fotoBlob(p){
+// La foto se pide una sola vez por producto y se guarda la promesa: si el vendedor
+// pasa el mouse o abre el panel, la descarga empieza antes del clic.
+function fotoBlob(p){
   if (fotoCache.has(p.sku)) return fotoCache.get(p.sku);
-  let blob = null;
-  if (!blob && modo === 'api'){
+  const prom = (async () => {
+    if (modo !== 'api') throw new Error('No se pudo obtener la foto');
     const j = await api({accion:'foto', sku:p.sku});
     if (!j.ok) throw new Error(j.error||'Sin foto');
     const bin = atob(j.base64), arr = new Uint8Array(bin.length);
     for (let i=0;i<bin.length;i++) arr[i] = bin.charCodeAt(i);
-    blob = new Blob([arr], {type:j.tipo||'image/jpeg'});
-  }
-  if (!blob) throw new Error('No se pudo obtener la foto');
-  fotoCache.set(p.sku, blob);
-  return blob;
+    return new Blob([arr], {type:j.tipo||'image/jpeg'});
+  })();
+  prom.catch(() => fotoCache.delete(p.sku)); // si falla, se puede reintentar
+  fotoCache.set(p.sku, prom);
+  return prom;
 }
-// Los chats solo aceptan PNG desde el portapapeles, así que se convierte.
+// Los chats solo aceptan PNG desde el portapapeles. Se limita a 1600 px:
+// suficiente para WhatsApp y Facebook, y se copia y pega más rápido.
+const MAX_LADO = 1600;
 async function aPng(blob){
   const bmp = await createImageBitmap(blob);
-  const c = document.createElement('canvas'); c.width = bmp.width; c.height = bmp.height;
-  const g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0,0,c.width,c.height); g.drawImage(bmp,0,0);
+  const k = Math.min(1, MAX_LADO / Math.max(bmp.width, bmp.height));
+  const c = document.createElement('canvas'); c.width = Math.round(bmp.width*k); c.height = Math.round(bmp.height*k);
+  const g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0,0,c.width,c.height); g.drawImage(bmp,0,0,c.width,c.height);
   return new Promise(res => c.toBlob(res, 'image/png'));
 }
-async function copiarFoto(p){
+const pngCache = new Map();
+function fotoPng(p){
+  if (pngCache.has(p.sku)) return pngCache.get(p.sku);
+  const prom = fotoBlob(p).then(aPng);
+  prom.catch(() => pngCache.delete(p.sku));
+  pngCache.set(p.sku, prom);
+  return prom;
+}
+// Precarga silenciosa (sin avisos si falla).
+function precargar(p){ if (p && p.foto && modo === 'api') fotoPng(p).catch(()=>{}); }
+
+async function copiarFoto(p, boton){
   if (!p.foto) return toast('Este producto no tiene foto', true);
   if (!window.ClipboardItem) return toast('Este navegador no deja copiar imágenes. Usa "Descargar foto".', true);
+  const prom = fotoPng(p);
+  let lista = false; prom.then(() => lista = true, () => {});
+  await Promise.resolve();
+  if (!lista) { toast('Copiando foto…'); if (boton) { boton.disabled = true; boton.textContent = 'Copiando…'; } }
   try {
-    await navigator.clipboard.write([new ClipboardItem({'image/png': fotoBlob(p).then(aPng)})]);
+    await navigator.clipboard.write([new ClipboardItem({'image/png': prom})]);
     toast('Foto copiada. Pégala en el chat con Ctrl+V');
   } catch(e){ toast(e.message && !/Document|permission|denied/i.test(e.message) ? e.message : 'No se pudo copiar la foto aquí. Usa "Descargar foto".', true); }
+  finally { if (boton) { boton.disabled = false; boton.textContent = 'Copiar foto'; } }
 }
 async function descargarFoto(p){
   if (!p.foto) return toast('Este producto no tiene foto', true);
@@ -364,12 +391,20 @@ const esc = s => String(s??'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;'
 const norm = s => String(s||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase();
 function filtrados(){
   const q = norm($('#q').value).split(/\s+/).filter(Boolean), c = $('#cat').value, solo = $('#soloDisp').checked, conFoto = $('#soloFoto').checked;
-  return productos.filter(p => {
+  const lista = productos.filter(p => {
     if (c && p.categoria !== c) return false;
     if (conFoto && !p.foto) return false;
     if (solo && disp(p.disponibilidad).n === 0) return false;
     return q.every(w => p._h.includes(w));
   });
+  return ordenar(lista);
+}
+function ordenar(lista){
+  const o = $('#orden').value;
+  if (o === 'precio-desc') return lista.sort((a,b) => (Number(b.precio)||0) - (Number(a.precio)||0));
+  if (o === 'precio-asc')  return lista.sort((a,b) => (Number(a.precio)||0) - (Number(b.precio)||0));
+  if (o === 'nombre')      return lista.sort((a,b) => String(a.nombre).localeCompare(String(b.nombre), 'es'));
+  return lista;
 }
 function fotoHtml(p){
   return p.foto ? `<img loading="lazy" src="${esc(encodeURI(decodeURI(p.foto)))}" alt="" onerror="this.replaceWith(Object.assign(document.createElement('div'),{className:'nofoto',textContent:'Foto no disponible'}))">`
@@ -409,6 +444,7 @@ function campo(lbl, txt, id){
 let actual = null, canal = 'wa';
 function abrir(p){
   actual = p;
+  precargar(p);
   const t = textos(p), d = disp(p.disponibilidad);
   const vistas = {
     wa: campo('WhatsApp', t.wa, 'c1') + campo('Respuesta rápida (una línea)', t.rapido, 'c2'),
@@ -456,7 +492,7 @@ $('#grid').addEventListener('click', e => {
   const act = e.target.closest('[data-act]')?.dataset.act;
   if (act === 'wa') copiarTexto(textos(p).wa, 'Texto de WhatsApp copiado');
   else if (act === 'fb') copiarTexto(textos(p).fb, 'Texto de Facebook copiado');
-  else if (act === 'foto') copiarFoto(p);
+  else if (act === 'foto') copiarFoto(p, e.target.closest('button'));
   else if (act === 'ver') { if (e.target.closest('.b.mk')) canal = 'mk'; abrir(p); }
 });
 $('#panel').addEventListener('click', e => {
@@ -464,8 +500,21 @@ $('#panel').addEventListener('click', e => {
   const c = e.target.dataset.copy; if (c) return copiarTexto($('#'+c).textContent);
   const k = e.target.dataset.canal; if (k){ canal = k; return abrir(actual); }
   const a = e.target.dataset.p;
-  if (a === 'foto') copiarFoto(actual); else if (a === 'descargar') descargarFoto(actual); else if (a === 'compartir') compartir(actual);
+  if (a === 'foto') copiarFoto(actual, e.target); else if (a === 'descargar') descargarFoto(actual); else if (a === 'compartir') compartir(actual);
 });
+// Precarga: si el mouse se queda 300 ms sobre una tarjeta (o se toca en el teléfono),
+// la foto empieza a descargarse antes del clic. Pasar de largo no descarga nada.
+let tarjetaActual = '', esperaPrecarga;
+const alAcercarse = (e, demora) => {
+  const card = e.target.closest && e.target.closest('.card');
+  const sku = card ? card.dataset.sku : '';
+  if (sku === tarjetaActual) return;
+  tarjetaActual = sku; clearTimeout(esperaPrecarga);
+  if (sku) esperaPrecarga = setTimeout(() => precargar(buscar(sku)), demora);
+};
+$('#grid').addEventListener('pointerover', e => alAcercarse(e, 300));
+$('#grid').addEventListener('pointerleave', () => { tarjetaActual = ''; clearTimeout(esperaPrecarga); });
+$('#grid').addEventListener('touchstart', e => alAcercarse(e, 0), {passive:true});
 $('#scrim').addEventListener('click', cerrar);
 document.addEventListener('keydown', e => { if (e.key === 'Escape') cerrar(); });
 $('#selbar').addEventListener('click', e => {
@@ -477,10 +526,13 @@ $('#selbar').addEventListener('click', e => {
 $('#soloFoto').checked = store.get('ct_solofoto') === '1';
 $('#soloFoto').addEventListener('change', e => store.set('ct_solofoto', e.target.checked?'1':'0'));
 let espera; $('#q').addEventListener('input', () => { clearTimeout(espera); espera = setTimeout(pintar, 150); });
-['#cat','#soloDisp','#soloFoto'].forEach(s => $(s).addEventListener('input', pintar));
+const ordenGuardado = store.get('ct_orden');
+if (ordenGuardado !== null && [...$('#orden').options].some(o => o.value === ordenGuardado)) $('#orden').value = ordenGuardado;
+$('#orden').addEventListener('change', e => store.set('ct_orden', e.target.value));
+['#cat','#orden','#soloDisp','#soloFoto'].forEach(s => $(s).addEventListener('input', pintar));
 $('#conCodigo').checked = store.get('ct_codigo') === '1';
 $('#conCodigo').addEventListener('change', e => { store.set('ct_codigo', e.target.checked?'1':'0'); if (actual) abrir(actual); });
-$('#recargar').addEventListener('click', () => { fotoCache.clear(); cargar(); });
+$('#recargar').addEventListener('click', () => { fotoCache.clear(); pngCache.clear(); cargar(); });
 $('#ajustes').addEventListener('click', () => { $('#cfgApi').value = store.get('ct_api')||''; $('#cfgClave').value = store.get('ct_clave')||''; $('#dlg').showModal(); });
 $('#dlg').addEventListener('close', () => {
   const v = $('#dlg').returnValue;
