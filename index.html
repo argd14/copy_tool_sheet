@@ -257,6 +257,19 @@ async function copiarTexto(t, msg='Texto copiado'){
 // Consigue la foto como archivo a través de la API (los servidores de fotos no dejan copiarlas directo).
 // La foto se pide una sola vez por producto y se guarda la promesa: si el vendedor
 // pasa el mouse o abre el panel, la descarga empieza antes del clic.
+// Reconoce la imagen por sus primeros bytes, sin fiarse del tipo que manda el servidor
+// (Intcomex manda "octet-stream" y algunos enlaces devuelven una página HTML).
+function tipoImagen(a){
+  const h = (i,n) => Array.from(a.slice(i,i+n)).map(x=>x.toString(16).padStart(2,'0')).join('');
+  const t = (i,n) => String.fromCharCode(...a.slice(i,i+n));
+  if (h(0,3) === 'ffd8ff') return 'image/jpeg';
+  if (h(0,4) === '89504e47') return 'image/png';
+  if (t(0,4) === 'GIF8') return 'image/gif';
+  if (t(0,4) === 'RIFF' && t(8,4) === 'WEBP') return 'image/webp';
+  if (t(4,4) === 'ftyp') return 'image/avif';
+  if (h(0,2) === '424d') return 'image/bmp';
+  return '';
+}
 function fotoBlob(p){
   if (fotoCache.has(p.sku)) return fotoCache.get(p.sku);
   const prom = (async () => {
@@ -265,7 +278,9 @@ function fotoBlob(p){
     if (!j.ok) throw new Error(j.error||'Sin foto');
     const bin = atob(j.base64), arr = new Uint8Array(bin.length);
     for (let i=0;i<bin.length;i++) arr[i] = bin.charCodeAt(i);
-    return new Blob([arr], {type:j.tipo||'image/jpeg'});
+    const tipo = tipoImagen(arr);
+    if (!tipo) { const e = new Error('El enlace de foto de este producto no es una imagen (es una página web). Revisa la foto del SKU ' + p.sku + ' en el inventario.'); e.noImg = true; throw e; }
+    return new Blob([arr], {type:tipo});
   })();
   prom.catch(() => fotoCache.delete(p.sku)); // si falla, se puede reintentar
   fotoCache.set(p.sku, prom);
@@ -280,6 +295,14 @@ async function aPng(blob){
   const c = document.createElement('canvas'); c.width = Math.round(bmp.width*k); c.height = Math.round(bmp.height*k);
   const g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0,0,c.width,c.height); g.drawImage(bmp,0,0,c.width,c.height);
   return new Promise(res => c.toBlob(res, 'image/png'));
+}
+// Descargar/compartir siempre en JPG: algunas fotos de Intcomex llegan como
+// "application/octet-stream" o WEBP y se guardaban con extensión rara.
+async function aJpg(blob){
+  const bmp = await createImageBitmap(blob);
+  const c = document.createElement('canvas'); c.width = bmp.width; c.height = bmp.height;
+  const g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0,0,c.width,c.height); g.drawImage(bmp,0,0);
+  return new Promise((res, rej) => c.toBlob(b => b ? res(b) : rej(new Error('No se pudo convertir')), 'image/jpeg', 0.92));
 }
 const pngCache = new Map();
 function fotoPng(p){
@@ -308,19 +331,19 @@ async function copiarFoto(p, boton){
 async function descargarFoto(p){
   if (!p.foto) return toast('Este producto no tiene foto', true);
   try {
-    const b = await fotoBlob(p), ext = (b.type.split('/')[1]||'jpg').replace('jpeg','jpg');
-    const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = `${p.sku}.${ext}`;
+    const b = await aJpg(await fotoBlob(p));
+    const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = `${p.sku}.jpg`;
     document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(a.href), 5000);
-  } catch(e){ window.open(encodeURI(decodeURI(p.foto)), '_blank'); }
+  } catch(e){ if (e && e.noImg) return toast(e.message, true); window.open(encodeURI(decodeURI(p.foto)), '_blank'); }
 }
 async function compartir(p){
   const t = textos(p).wa.replace(/\*/g,'');
   try {
     const files = [];
-    if (p.foto){ const b = await fotoBlob(p); files.push(new File([b], `${p.sku}.jpg`, {type:b.type})); }
+    if (p.foto){ const b = await aJpg(await fotoBlob(p)); files.push(new File([b], `${p.sku}.jpg`, {type:'image/jpeg'})); }
     if (files.length && navigator.canShare && navigator.canShare({files})) await navigator.share({files, text:t});
     else await navigator.share({text:t});
-  } catch(e){ if (e.name !== 'AbortError') toast('No se pudo compartir', true); }
+  } catch(e){ if (e && e.noImg) toast(e.message, true); else if (e.name !== 'AbortError') toast('No se pudo compartir', true); }
 }
 
 /* ---------- API ---------- */
